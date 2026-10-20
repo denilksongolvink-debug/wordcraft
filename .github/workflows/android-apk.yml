@@ -66,6 +66,14 @@ jobs:
       - name: Copy custom MainActivity
         run: cp android-shell/android-main-activity.kt android-shell/android/app/src/main/java/com/wordcraft/app/MainActivity.kt
 
+      - name: Copy FileBridge plugin
+        run: cp android-shell/android-file-bridge.kt android-shell/android/app/src/main/java/com/wordcraft/app/FileBridge.kt
+
+      - name: Copy FileProvider paths
+        run: |
+          mkdir -p android-shell/android/app/src/main/res/xml
+          cp android-shell/android-file-paths.xml android-shell/android/app/src/main/res/xml/file_paths.xml
+
       - name: Sync Capacitor Android
         working-directory: android-shell
         run: npx cap sync android
