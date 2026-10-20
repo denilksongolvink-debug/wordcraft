@@ -26,10 +26,13 @@ jobs:
         run: trunk build --release --public-url ./
 
       # --- Copy dist to shell ---
+      # apps/wordcraft-web/Trunk.toml sets dist = "../../dist/web", so with
+      # working-directory apps/wordcraft-web the build lands in <repo>/dist/web.
       - name: Copy web build to shell
         run: |
+          test -d dist/web || { echo "dist/web missing — trunk output path changed?"; ls -la dist || true; exit 1; }
           mkdir -p android-shell/www
-          cp -r apps/wordcraft-web/dist/* android-shell/www/
+          cp -r dist/web/. android-shell/www/
 
       # --- Android shell ---
       - uses: actions/setup-node@v4
@@ -40,11 +43,26 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      # No package-lock.json is committed, so `npm ci` would fail; use `npm install`.
       - name: Install shell deps
         working-directory: android-shell
-        run: npm ci
+        run: npm install
 
-      - name: Sync Capacitor
+      # android-shell/android/ is not committed (hand-written skeleton removed);
+      # let Capacitor generate the real Android project (capacitor.settings.gradle,
+      # :capacitor-android, assets dir, gradle wrapper). `cap add` also copies
+      # www/ into android/app/src/main/assets/public.
+      - name: Add Capacitor Android project
+        working-directory: android-shell
+        run: npx cap add android
+
+      - name: Copy DeX-ready AndroidManifest
+        run: cp android-shell/android-manifest.xml android-shell/android/app/src/main/AndroidManifest.xml
+
+      - name: Copy custom MainActivity
+        run: cp android-shell/android-main-activity.kt android-shell/android/app/src/main/java/com/wordcraft/app/MainActivity.kt
+
+      - name: Sync Capacitor Android
         working-directory: android-shell
         run: npx cap sync android
 
@@ -55,4 +73,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wordcraft-debug-apk
+          if-no-files-found: error
           path: android-shell/android/app/build/outputs/apk/debug/*.apk
