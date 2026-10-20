@@ -3,6 +3,10 @@ name: android-apk
 on:
   workflow_dispatch:
   push:
+    # The shell is developed on this branch, so every push validates the CI.
+    # `workflow_dispatch` alone is not enough: GitHub only registers it when the
+    # workflow file exists on the default branch.
+    branches: [feat/android-webview]
     tags: ["v*"]
 
 jobs:
