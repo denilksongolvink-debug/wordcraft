@@ -1,0 +1,58 @@
+name: android-apk
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # --- Web (WASM) ---
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: trunk,wasm-bindgen-cli
+
+      - name: Build web
+        working-directory: apps/wordcraft-web
+        run: trunk build --release --public-url ./
+
+      # --- Copy dist to shell ---
+      - name: Copy web build to shell
+        run: |
+          mkdir -p android-shell/www
+          cp -r apps/wordcraft-web/dist/* android-shell/www/
+
+      # --- Android shell ---
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install shell deps
+        working-directory: android-shell
+        run: npm ci
+
+      - name: Sync Capacitor
+        working-directory: android-shell
+        run: npx cap sync android
+
+      - name: Build APK (debug)
+        working-directory: android-shell/android
+        run: ./gradlew assembleDebug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wordcraft-debug-apk
+          path: android-shell/android/app/build/outputs/apk/debug/*.apk

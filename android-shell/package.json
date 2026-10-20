@@ -1,0 +1,17 @@
+{
+  "name": "wordcraft-android-shell",
+  "version": "0.8.0",
+  "private": true,
+  "description": "WordCraft Android shell (Capacitor WebView)",
+  "scripts": {
+    "build": "cp -r ../../dist/web/* www/",
+    "sync": "cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.0.0",
+    "@capacitor/cli": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/filesystem": "^6.0.0",
+    "@capacitor/share": "^6.0.0"
+  }
+}
