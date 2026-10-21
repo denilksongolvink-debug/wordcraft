@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
-    <!-- Files FileBridge hands to the share sheet. -->
+    <!-- Files FileBridge hands to the share sheet (cache/shared). -->
     <cache-path name="shared" path="shared/" />
+    <!-- The app's own folders: Capacitor's camera capture writes the photo
+         there before it hands it over. -->
+    <external-files-path name="external_files" path="." />
+    <files-path name="files" path="." />
 </paths>

@@ -44,8 +44,12 @@
     </application>
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Storage access for the file bridge. On API 30+ these are ignored; the
-         bridge should use SAF or app-specific dirs instead (see KNOWN_ISSUES.md). -->
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Storage access for the file bridge below API 29: on API 29+ the bridge
+         writes through MediaStore, which needs no permission. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 </manifest>

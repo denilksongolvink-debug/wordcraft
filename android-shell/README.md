@@ -39,7 +39,36 @@ These prevent the app from restarting on window resize in DeX.
 
 ## File bridge
 
-Saving uses the browser download fallback (blob → anchor). On Android WebView,
-intercept `<a download>` clicks and save via `@capacitor/filesystem` + `@capacitor/share`.
-Implementation: the generated `android/.../MainActivity.kt` (default Capacitor
-`BridgeActivity`; both plugins auto-register in Capacitor 6).
+The web build hands a saved file to the browser as a blob plus a click on an
+`<a download>` element. The Android WebView ignores that click, so the shell
+bridges the two halves itself:
+
+| File | Job |
+|---|---|
+| `android-main-activity.kt` | The `MainActivity`: opens the system picker for the hidden `<input type="file">` the file dialog uses, and injects the script that catches `<a download>` clicks |
+| `android-file-bridge.kt` | The `FileBridge` plugin: `save` writes to Downloads (MediaStore on API 29+, the legacy folder below), `share` opens the system share sheet |
+| `android-file-core.kt` | `FileBridgeCore`: the pure logic (name sanitising, MIME types, base64, unique names) |
+| `android-file-core-test.kt` | The unit tests for `FileBridgeCore` |
+| `android-manifest.xml` | The `FileProvider` and the storage permissions |
+| `android-file-paths.xml` | The folders the `FileProvider` may hand out |
+
+Two rules the shell has to keep:
+
+- Capacitor's own `BridgeWebViewClient` and `BridgeWebChromeClient` are
+  **extended, not replaced**. The web view client serves the app itself
+  (`shouldInterceptRequest`); a plain `WebViewClient` leaves the WebView with
+  no page at all.
+- `registerPlugin(FileBridge::class.java)` runs **before** `super.onCreate`,
+  because Capacitor builds the bridge (and its plugin list) there.
+
+### Tests
+
+The unit tests run on the JVM, with the same Gradle task the APK workflow
+uses:
+
+```bash
+cd android-shell/android
+./gradlew testDebugUnitTest
+```
+
+The CI runs them before it builds the APK.

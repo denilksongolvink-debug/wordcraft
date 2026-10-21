@@ -72,6 +72,11 @@ jobs:
       - name: Copy FileBridgeCore plugin
         run: cp android-shell/android-file-core.kt android-shell/android/app/src/main/java/com/wordcraft/app/FileBridgeCore.kt
 
+      - name: Copy the file bridge unit tests
+        run: |
+          mkdir -p android-shell/android/app/src/test/java/com/wordcraft/app
+          cp android-shell/android-file-core-test.kt android-shell/android/app/src/test/java/com/wordcraft/app/FileBridgeTest.kt
+
       - name: Copy FileProvider paths
         run: |
           mkdir -p android-shell/android/app/src/main/res/xml
@@ -80,6 +85,10 @@ jobs:
       - name: Sync Capacitor Android
         working-directory: android-shell
         run: npx cap sync android
+
+      - name: Run the file bridge unit tests
+        working-directory: android-shell/android
+        run: ./gradlew testDebugUnitTest
 
       - name: Build APK (debug)
         working-directory: android-shell/android
