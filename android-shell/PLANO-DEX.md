@@ -5,7 +5,8 @@
 > **Estratégia:** build web (WASM) → casca Android (WebView) → APK gerado no GitHub Actions
 > **Plano B:** port nativo (cdylib + cargo-ndk) só se a rota web falhar nos gates
 
-> **Status geral:** Gate 1 passou. Fases 3 e 4 concluídas. Gate 2 parcial (ver §14).
+> **Status geral:** Gate 1 passou. Fases 3 e 4 concluídas. Fase 6 (ponte de arquivos) implementada,
+> falta o teste no aparelho. Gate 2 parcial (ver §14).
 
 ---
 
@@ -17,8 +18,8 @@
 - [x] APK instala e abre sem crash
 - [x] A UI renderiza (ribbon, página, rulers) e responde a mouse e teclado físico
 - [x] Dá pra digitar, formatar (Ctrl+B, estilos) e usar undo/redo
-- [ ] Abre um `.docx` do armazenamento do aparelho
-- [ ] Salva/exporta `.docx` e PDF de volta pro armazenamento
+- [ ] Abre um `.docx` do armazenamento do aparelho — ponte implementada (§9.1), falta testar
+- [ ] Salva/exporta `.docx` e PDF de volta pro armazenamento — ponte implementada (§9.2), falta testar
 - [ ] Redimensionar a janela no DeX não reinicia o app nem perde o documento
 
 **Fora do escopo do MVP:** publicar na Play Store, assinatura de release, modo offline via service worker, port nativo.
@@ -169,7 +170,10 @@ A WebView **não** trata como o Chrome:
 - **Abrir:** `<input type="file">` só funciona se o `WebChromeClient` implementar `onShowFileChooser`. O `BridgeWebChromeClient` padrão do Capacitor não implementa.
 - **Salvar:** download via `blob:` não dispara nada por padrão.
 
-**Estado atual: NÃO IMPLEMENTADO.** Confirmado em teste no aparelho: salvar, salvar como e exportar (PDF etc.) não funcionam.
+**Estado atual: IMPLEMENTADO (§9.1 e §9.2).** O que falhava era a ponte, não a WebView:
+o `MainActivity` substituía os clientes do Capacitor por clientes comuns — o que deixava a WebView
+sem página — e tratava o retorno do seletor de arquivos como uma lista, quando o
+`ActivityResultContracts.OpenDocument` devolve um único `Uri`.
 
 **Solução escolhida (implementar na Fase 6):**
 
@@ -290,13 +294,31 @@ Na `MainActivity`, sobrescrever `onShowFileChooser`:
 - No `onShowFileChooser`: guardar o callback, lançar o launcher
 - No resultado: ler os bytes e devolver o `Uri` → o `<input type="file">` do `rfd` recebe o `change` e o arquivo cai no `inbox`
 
-### 9.2 Salvar/exportar
+### 9.2 Salvar/exportar — IMPLEMENTADO
 
-- JS injetado em `onPageFinished`:
+- JS injetado em `onPageFinished` (`INSTALL_FILE_BRIDGE`):
   - intercepta cliques em `a[download]`
   - lê o blob, converte pra base64
-  - chama `Capacitor.Plugins.FileBridge.save(name, base64)`
-- Kotlin: plugin `FileBridge` gravando em `MediaStore.Downloads` (API 29+) ou no storage do app, e oferecendo `@capacitor/share`
+  - chama `Capacitor.Plugins.FileBridge.save({ name, data })`
+- Kotlin: plugin `FileBridge` gravando em `MediaStore.Downloads` (API 29+) ou na pasta pública
+  (API 28 e abaixo, quando a permissão de armazenamento foi concedida) e oferecendo `share` pelo
+  `FileProvider`.
+
+**Regras que a implementação impõe (e que quebram o app se ignoradas):**
+
+1. `registerPlugin(FileBridge::class.java)` **antes** de `super.onCreate` — o Capacitor monta a
+   ponte (e a lista de plugins) ali.
+2. Os clientes do Capacitor são **extendidos**, não substituídos: o `BridgeWebViewClient` é quem
+   serve o app (`shouldInterceptRequest`) e o `BridgeWebChromeClient` é quem responde às caixas de
+   diálogo do JS. Um `WebViewClient` comum deixa a WebView sem página.
+3. `ActivityResultContracts.OpenDocument` devolve **um** `Uri` (não uma lista). O `Uri` vai para o
+   `pendingFileCallback`; `null` significa "o usuário cancelou".
+4. Todo nome que vem da web passa por `FileBridgeCore.sanitizeFileName`: nada de `../`, nada de
+   caractere que o sistema de arquivos recusa.
+
+A lógica pura (nomes, MIME, base64) mora em `FileBridgeCore` e tem testes de unidade em
+`android-shell/android-file-core-test.kt` (`./gradlew testDebugUnitTest`, roda no CI antes de
+montar o APK).
 
 ### 9.3 Ordem
 
@@ -367,14 +389,16 @@ Testado no S22 (não no DeX — o resize ainda não foi validado).
 | 2 | UI renderiza (ribbon, página, rulers) | ✔ |
 | 3 | Digitar / formatar (Ctrl+B, estilos) / undo-redo | ✔ |
 | 4 | Mouse: clique, drag-select, scroll | ✔ |
-| 5 | Abrir `.docx` do armazenamento | **FALHA** — ponte não implementada |
-| 6 | Salvar / Salvar como | **FALHA** — ponte não implementada |
-| 7 | Exportar PDF e outras extensões | **FALHA** — ponte não implementada |
+| 5 | Abrir `.docx` do armazenamento | **FALHA** — ponte não existia; agora implementada (§9.1), falta testar |
+| 6 | Salvar / Salvar como | **FALHA** — ponte não existia; agora implementada (§9.2), falta testar |
+| 7 | Exportar PDF e outras extensões | **FALHA** — ponte não existia; agora implementada (§9.2), falta testar |
 | 8 | Redimensionar no DeX sem perder o documento | **NÃO TESTADO** |
 | 9 | Acentos / UI em pt-BR | ✔ |
 | 10 | Documento grande | NÃO TESTADO |
 
-**GATE 2: PARCIAL.** Renderização e edição passam; arquivos falham por design (ponte ausente). Não é bug do WebView nem do WASM — é o que a Fase 6 implementa.
+**GATE 2: PARCIAL.** Renderização e edição passam. A ponte de arquivos (§9) foi implementada depois
+deste teste — as linhas 5 a 7 medem o aparelho **antes** da ponte e precisam ser refeitas com o APK
+novo.
 
 ---
 
@@ -393,10 +417,11 @@ Testado no S22 (não no DeX — o resize ainda não foi validado).
 - [x] Instalar APK e verificar conteúdo
 
 **Dia 3 — arquivos e polimento — EM ANDAMENTO**
-- [ ] Ponte de abrir `.docx` (`onShowFileChooser`)
-- [ ] Ponte de salvar/exportar (FileBridge + JS)
+- [x] Ponte de abrir `.docx` (`onShowFileChooser`)
+- [x] Ponte de salvar/exportar (FileBridge + JS) — com testes de unidade
+- [ ] Testar a ponte no aparelho (S22 e DeX)
 - [ ] Testes extras de DeX (resize com documento aberto)
-- [ ] `KNOWN_ISSUES.md` + README do shell atualizados
+- [x] `KNOWN_ISSUES.md` + README do shell atualizados
 
 ---
 
@@ -410,3 +435,4 @@ Testado no S22 (não no DeX — o resize ainda não foi validado).
 | 2026-19 | Fase 4 — run 39445793327 | falha: `npm ci` + tema do manifest |
 | 2026-10-19 | Fase 4 — run 39448573142 | **verde** — APK gerado e verificado |
 | 2026-10-19 | Fase 5 — Gate 2 no S22 | parcial: arquivos falham (ponte ausente) |
+| 2026-10-21 | Fase 6 §9.1/§9.2 — ponte de arquivos | implementada (`FileBridge` + script + `onShowFileChooser`); 18 testes de unidade verdes; falta o teste no aparelho |
