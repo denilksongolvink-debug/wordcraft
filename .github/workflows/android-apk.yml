@@ -50,7 +50,7 @@ jobs:
       # No package-lock.json is committed, so `npm ci` would fail; use `npm install`.
       - name: Install shell deps
         working-directory: android-shell
-        run: npm install
+        run: npm install --include=dev
 
       # android-shell/android/ is not committed (hand-written skeleton removed);
       # let Capacitor generate the real Android project (capacitor.settings.gradle,
@@ -59,6 +59,82 @@ jobs:
       - name: Add Capacitor Android project
         working-directory: android-shell
         run: npx cap add android
+
+      - name: Enable Kotlin in generated Android project
+        working-directory: android-shell
+        run: |
+          set -e
+          ROOT_GRADLE="android/build.gradle"
+          APP_GRADLE="android/app/build.gradle"
+          KOTLIN_VERSION="1.9.22"
+
+          # Add Kotlin Gradle plugin classpath to root buildscript if missing
+          if grep -q "org.jetbrains.kotlin:kotlin-gradle-plugin" "$ROOT_GRADLE"; then
+            echo "Kotlin plugin already present in $ROOT_GRADLE"
+          else
+            python3 - "$ROOT_GRADLE" "$KOTLIN_VERSION" << 'PY'
+import sys
+
+path = sys.argv[1]
+version = sys.argv[2]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+needle = "        classpath 'com.google.gms:google-services:4.4.0'\n\n        // NOTE: Do not place your application dependencies here; they belong"
+replacement = "        classpath 'com.google.gms:google-services:4.4.0'\n        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:" + version + "\"\n\n        // NOTE: Do not place your application dependencies here; they belong"
+if needle not in content:
+    # Fallback: try to insert before NOTE
+    needle2 = "        // NOTE: Do not place your application dependencies here"
+    if needle2 in content and "kotlin-gradle-plugin" not in content:
+        replacement2 = "        classpath \"org.jetbrains.kotlin:kotlin-gradle-plugin:" + version + "\"\n\n        " + needle2
+        content = content.replace(needle2, replacement2)
+    else:
+        sys.exit(0)
+else:
+    content = content.replace(needle, replacement)
+
+with open(path, 'w', encoding='utf-8') as f:
+    f.write(content)
+PY
+            echo "Added Kotlin plugin classpath to $ROOT_GRADLE"
+          fi
+
+          # Add kotlin-android plugin and stdlib to app build.gradle if missing
+          if grep -q "apply plugin: 'kotlin-android'" "$APP_GRADLE"; then
+            echo "kotlin-android already applied in $APP_GRADLE"
+          else
+            python3 - "$APP_GRADLE" "$KOTLIN_VERSION" << 'PY'
+import sys
+
+path = sys.argv[1]
+version = sys.argv[2]
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+# Add plugin after com.android.application
+old = "apply plugin: 'com.android.application'\n"
+new = "apply plugin: 'com.android.application'\napply plugin: 'kotlin-android'\n"
+if old in content and "kotlin-android" not in content:
+    content = content.replace(old, new)
+
+# Add stdlib dependency if missing
+if "org.jetbrains.kotlin:kotlin-stdlib" not in content:
+    # Try to add before testImplementation or at end of dependencies
+    if "    testImplementation" in content:
+        content = content.replace("    testImplementation", "    implementation \"org.jetbrains.kotlin:kotlin-stdlib:" + version + "\"\n    testImplementation", 1)
+    elif "dependencies {" in content:
+        # append before last }
+        # naive: insert before final }
+        idx = content.rfind('}')
+        if idx >= 0:
+            content = content[:idx] + "    implementation \"org.jetbrains.kotlin:kotlin-stdlib:" + version + "\"\n}\n" + content[idx+1:]
+with open(path, 'w', encoding='utf-8') as f:
+    f.write(content)
+PY
+            echo "Added kotlin-android and stdlib to $APP_GRADLE"
+          fi
+
+          grep -n "kotlin" "$ROOT_GRADLE" "$APP_GRADLE" | head -15
 
       - name: Copy DeX-ready AndroidManifest
         run: cp android-shell/android-manifest.xml android-shell/android/app/src/main/AndroidManifest.xml
